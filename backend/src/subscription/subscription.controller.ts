@@ -23,7 +23,7 @@ export class SubscriptionController {
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe(upgradeSubscriptionSchema)) dto: UpgradeSubscriptionDto,
   ) {
-    return this.subscriptionService.upgrade(user.tenantId, dto);
+    return this.subscriptionService.requestUpgrade(user.tenantId, dto);
   }
 
   @Get('invoices')

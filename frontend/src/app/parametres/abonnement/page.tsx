@@ -63,14 +63,21 @@ export default function AbonnementPage() {
   }, []);
 
   async function handleUpgrade(plan: PlanTier) {
-    if (!confirm(`Passer au plan ${PLAN_LABELS[plan]} ?`)) return;
+    if (
+      !confirm(
+        plan === 'FREE'
+          ? 'Repasser au plan Gratuit ?'
+          : `Demander le passage au plan ${PLAN_LABELS[plan]} ? Le plan ne sera activé qu'une fois le paiement confirmé.`,
+      )
+    )
+      return;
     setUpgradeError(null);
     setUpgrading(plan);
     try {
       await api.post('/subscription/upgrade', { plan });
       load();
     } catch (err) {
-      setUpgradeError(err instanceof ApiError ? err.message : 'Le changement de plan a échoué.');
+      setUpgradeError(err instanceof ApiError ? err.message : 'La demande de changement de plan a échoué.');
     } finally {
       setUpgrading(null);
     }
@@ -123,9 +130,18 @@ export default function AbonnementPage() {
 
             {upgradeError && <p className="mb-4 text-sm text-red-500">{upgradeError}</p>}
 
+            {subscription.pendingInvoice && (
+              <Card className="mb-6 flex items-center gap-2 border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-400">
+                Demande de passage au plan <strong>{PLAN_LABELS[subscription.pendingInvoice.plan]}</strong> en
+                attente de confirmation de paiement ({formatXOF(subscription.pendingInvoice.amount)}). Le plan
+                Business/Premium ne s'active qu'une fois le paiement vérifié — contacte-nous pour finaliser.
+              </Card>
+            )}
+
             <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {PLAN_ORDER.map((plan) => {
                 const isCurrent = plan === subscription.plan;
+                const isPending = subscription.pendingInvoice?.plan === plan;
                 return (
                   <Card
                     key={plan}
@@ -148,12 +164,12 @@ export default function AbonnementPage() {
                     </ul>
                     <Button
                       className="mt-4 w-full"
-                      variant={isCurrent ? 'secondary' : 'primary'}
-                      disabled={isCurrent}
+                      variant={isCurrent || isPending ? 'secondary' : 'primary'}
+                      disabled={isCurrent || isPending}
                       loading={upgrading === plan}
                       onClick={() => handleUpgrade(plan)}
                     >
-                      {isCurrent ? 'Plan actuel' : 'Choisir'}
+                      {isCurrent ? 'Plan actuel' : isPending ? 'Demande en attente' : 'Choisir'}
                     </Button>
                   </Card>
                 );

@@ -417,3 +417,22 @@ Le code a été écrit dans un environnement **sans accès réseau** : je n'ai p
 Les 13 sprints couvrent l'intégralité du prompt initial. Le projet est fonctionnellement complet : authentification et gestion des employés, caisse et stock, fournisseurs et achats, comptabilité, notifications et exports, multi-boutique, abonnements SaaS, sécurité renforcée (2FA, journal d'audit), API publique REST et GraphQL avec webhooks, et mode hors-ligne pour la caisse.
 
 Comme à chaque sprint, le code n'a pas pu être exécuté dans l'environnement où il a été écrit (pas d'accès réseau) — chaque étape a été vérifiée par relecture attentive, mais seule l'exécution en local (les commandes `npm test` de chaque section ci-dessus, puis les scénarios de vérification numérotés) confirme que tout fonctionne bout en bout.
+
+## Sécurisation des abonnements payants — activation manuelle par confirmation de paiement
+
+Jusqu'ici (Sprint 9), `POST /subscription/upgrade` activait le plan immédiatement, sans aucune vérification qu'un paiement avait réellement eu lieu — n'importe quel tenant ADMIN pouvait s'auto-attribuer un plan payant gratuitement. C'est corrigé :
+
+- `POST /subscription/upgrade` ne change plus jamais le plan actif pour un plan payant : il crée une **facture en attente** (`paidAt: null`), consultable par le tenant sur `/parametres/abonnement`. Le plan actif — et donc les limites appliquées (boutiques, produits, rôles fins, comptabilité) — reste inchangé tant que le paiement n'est pas confirmé.
+- Le passage au plan **Gratuit** reste immédiat (aucun paiement à sécuriser).
+- Un nouvel endpoint réservé à l'opérateur de la plateforme (toi, pas un tenant) active réellement le plan une fois le paiement vérifié manuellement (ex. après réception d'un transfert Orange Money/Moov Money) :
+  ```bash
+  curl -X POST https://ton-backend/api/platform/invoices/<invoice-id>/confirm-payment \
+    -H "X-Platform-Secret: <la valeur de PLATFORM_ADMIN_SECRET>"
+  ```
+- Cet endpoint est protégé par `PlatformSecretGuard`, complètement séparé du système d'authentification des tenants (`JwtAuthGuard`/`RolesGuard`) — un tenant ADMIN n'a structurellement aucun moyen d'y accéder, même en connaissant l'URL.
+
+**Configuration requise** : ajoute `PLATFORM_ADMIN_SECRET` à ton `.env` (backend) et sur Railway (Variables), avec une valeur longue et aléatoire — voir `.env.example`. Sans cette variable, l'endpoint refuse systématiquement (fail closed), il ne s'ouvre jamais par défaut.
+
+Pour trouver l'`invoice-id` à confirmer : `GET /subscription/invoices` (en tant que tenant ADMIN) ou directement dans la table `invoices` de la base de données.
+
+**Hors périmètre pour l'instant** : un back-office dédié pour lister/confirmer les paiements en attente sans passer par `curl`/Postman — envisageable si le volume de demandes le justifie un jour.

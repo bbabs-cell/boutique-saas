@@ -25,6 +25,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { PublicApiModule } from './public-api/public-api.module';
 import { SyncModule } from './sync/sync.module';
 import { GraphqlModule } from './graphql/graphql.module';
+import { PlatformModule } from './platform/platform.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { GraphqlModule } from './graphql/graphql.module';
     PublicApiModule,
     SyncModule,
     GraphqlModule,
+    PlatformModule,
   ],
 })
 export class AppModule {}

@@ -336,6 +336,7 @@ export interface Subscription {
   startedAt: string;
   expiresAt: string | null;
   limits: PlanLimits;
+  pendingInvoice: Invoice | null;
 }
 
 export interface Invoice {
