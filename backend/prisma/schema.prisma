@@ -1,0 +1,483 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  CAISSIER
+  MAGASINIER
+}
+
+enum SaleStatus {
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  ORANGE_MONEY
+  MOOV_MONEY
+  CARD
+  CREDIT
+}
+
+enum StockMovementType {
+  SALE
+  ADJUSTMENT
+  RESTOCK
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  RECEIVED
+  CANCELLED
+}
+
+enum NotificationType {
+  LOW_STOCK
+  OUT_OF_STOCK
+  PAYMENT_RECEIVED
+  SUBSCRIPTION_EXPIRING
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  BUSINESS
+  PREMIUM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model Tenant {
+  id         String   @id @default(cuid())
+  name       String
+  currency   String   @default("XOF")
+  tvaEnabled Boolean  @default(false)
+  tvaRate    Int      @default(0) // en %, réglable — beaucoup de petits commerces ne sont pas assujettis à la TVA
+  logoUrl    String?
+  language   String   @default("fr")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  users      User[]
+  categories Category[]
+  products   Product[]
+  sales      Sale[]
+
+  customers        Customer[]
+  customerPayments CustomerPayment[]
+  stockMovements   StockMovement[]
+
+  suppliers        Supplier[]
+  purchaseOrders   PurchaseOrder[]
+  supplierPayments SupplierPayment[]
+
+  expenses Expense[]
+
+  notifications Notification[]
+
+  stores Store[]
+
+  subscription Subscription?
+
+  auditLogs AuditLog[]
+
+  apiKeys  ApiKey[]
+  webhooks Webhook[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(CAISSIER)
+  active       Boolean  @default(true)
+  theme        String   @default("light")
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean  @default(false)
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sales Sale[]
+
+  stockMovements   StockMovement[]
+  customerPayments CustomerPayment[]
+
+  purchaseOrders   PurchaseOrder[]
+  supplierPayments SupplierPayment[]
+
+  expenses Expense[]
+
+  notifications Notification[]
+
+  userStores UserStore[]
+
+  auditLogs AuditLog[]
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  name     String
+  tenantId String
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  products Product[]
+
+  @@unique([tenantId, name])
+  @@map("categories")
+}
+
+model Product {
+  id         String    @id @default(cuid())
+  name       String
+  barcode    String?
+  price      Int
+  cost       Int
+  lowStockThreshold Int? // seuil d'alerte, identique quelle que soit la boutique
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  saleItems SaleItem[]
+  stockMovements StockMovement[]
+  purchaseOrderItems PurchaseOrderItem[]
+  inventory Inventory[]
+
+  @@unique([tenantId, barcode])
+  @@index([tenantId])
+  @@map("products")
+}
+
+model Sale {
+  id         String     @id @default(cuid())
+  tenantId   String
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  storeId    String
+  store      Store      @relation(fields: [storeId], references: [id])
+  userId     String
+  user       User       @relation(fields: [userId], references: [id])
+  customerId String?
+  customer   Customer?  @relation(fields: [customerId], references: [id])
+  items      SaleItem[]
+  payments   Payment[]
+  subtotal   Int
+  discount   Int        @default(0)
+  tvaAmount  Int        @default(0)
+  total      Int
+  status     SaleStatus @default(COMPLETED)
+  // Identifiant généré côté client pour une vente créée hors-ligne (Sprint 12) : permet de
+  // dédupliquer si le même lot est resynchronisé deux fois (ex. coupure pendant la synchro).
+  // null pour les ventes créées normalement en ligne.
+  clientId   String?    @unique
+  createdAt  DateTime   @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([storeId, createdAt])
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String  @id @default(cuid())
+  saleId    String
+  sale      Sale    @relation(fields: [saleId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitPrice Int // prix au moment de la vente, indépendant du prix actuel du produit
+  unitCost  Int // coût au moment de la vente, pour un calcul de bénéfice fiable même si le coût produit change ensuite
+
+  @@map("sale_items")
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  saleId    String
+  sale      Sale          @relation(fields: [saleId], references: [id])
+  method    PaymentMethod
+  amount    Int
+  reference String? // ex. ID de transaction Orange Money / Moov Money
+  createdAt DateTime      @default(now())
+
+  @@map("payments")
+}
+
+model StockMovement {
+  id        String            @id @default(cuid())
+  tenantId  String
+  tenant    Tenant            @relation(fields: [tenantId], references: [id])
+  storeId   String
+  store     Store             @relation(fields: [storeId], references: [id])
+  productId String
+  product   Product           @relation(fields: [productId], references: [id])
+  type      StockMovementType
+  quantity  Int // positif = entrée, négatif = sortie
+  reason    String? // ex. "comptage physique", "produit périmé", "réception marchandise"
+  userId    String
+  user      User              @relation(fields: [userId], references: [id])
+  createdAt DateTime          @default(now())
+
+  @@index([tenantId, productId])
+  @@index([storeId, productId])
+  @@map("stock_movements")
+}
+
+model Customer {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  name          String
+  phone         String?
+  creditBalance Int      @default(0) // dette actuelle du client, en XOF
+  creditLimit   Int? // plafond autorisé, null = pas de limite
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sales    Sale[]
+  payments CustomerPayment[]
+
+  @@index([tenantId])
+  @@map("customers")
+}
+
+model CustomerPayment {
+  id         String        @id @default(cuid())
+  tenantId   String
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  customerId String
+  customer   Customer      @relation(fields: [customerId], references: [id])
+  amount     Int
+  method     PaymentMethod
+  userId     String
+  user       User          @relation(fields: [userId], references: [id])
+  createdAt  DateTime      @default(now())
+
+  @@map("customer_payments")
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  phone     String?
+  balance   Int      @default(0) // dette de la boutique envers ce fournisseur, en XOF
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchaseOrders PurchaseOrder[]
+  payments       SupplierPayment[]
+
+  @@index([tenantId])
+  @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id         String              @id @default(cuid())
+  tenantId   String
+  tenant     Tenant              @relation(fields: [tenantId], references: [id])
+  storeId    String
+  store      Store               @relation(fields: [storeId], references: [id])
+  supplierId String
+  supplier   Supplier            @relation(fields: [supplierId], references: [id])
+  userId     String
+  user       User                @relation(fields: [userId], references: [id])
+  status     PurchaseOrderStatus @default(DRAFT)
+  items      PurchaseOrderItem[]
+  total      Int                 @default(0)
+  createdAt  DateTime            @default(now())
+  receivedAt DateTime?
+
+  @@index([tenantId])
+  @@index([storeId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  quantity        Int
+  unitCost        Int // coût d'achat pour cette commande
+
+  @@map("purchase_order_items")
+}
+
+model SupplierPayment {
+  id         String        @id @default(cuid())
+  tenantId   String
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  supplierId String
+  supplier   Supplier      @relation(fields: [supplierId], references: [id])
+  amount     Int
+  method     PaymentMethod
+  userId     String
+  user       User          @relation(fields: [userId], references: [id])
+  createdAt  DateTime      @default(now())
+
+  @@map("supplier_payments")
+}
+
+model Expense {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  label     String
+  amount    Int
+  category  String? // ex. "loyer", "salaires", "transport"
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@map("expenses")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  tenantId  String
+  tenant    Tenant           @relation(fields: [tenantId], references: [id])
+  userId    String? // null = visible par tous les admins du tenant
+  user      User?            @relation(fields: [userId], references: [id])
+  type      NotificationType
+  message   String
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([tenantId, read])
+  @@map("notifications")
+}
+
+model Store {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  address   String?
+  createdAt DateTime @default(now())
+
+  inventory      Inventory[]
+  sales          Sale[]
+  stockMovements StockMovement[]
+  purchaseOrders PurchaseOrder[]
+  userStores     UserStore[]
+
+  @@index([tenantId])
+  @@map("stores")
+}
+
+model UserStore {
+  userId  String
+  storeId String
+  user    User   @relation(fields: [userId], references: [id])
+  store   Store  @relation(fields: [storeId], references: [id])
+
+  @@id([userId, storeId])
+  @@map("user_stores")
+}
+
+model Inventory {
+  productId String
+  storeId   String
+  product   Product @relation(fields: [productId], references: [id])
+  store     Store   @relation(fields: [storeId], references: [id])
+  stock     Int     @default(0)
+
+  @@id([productId, storeId])
+  @@map("inventory")
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  tenantId  String             @unique
+  tenant    Tenant             @relation(fields: [tenantId], references: [id])
+  plan      PlanTier           @default(FREE)
+  status    SubscriptionStatus @default(ACTIVE)
+  startedAt DateTime           @default(now())
+  expiresAt DateTime?
+  invoices  Invoice[]
+
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id])
+  amount         Int
+  plan           PlanTier
+  method         PaymentMethod?
+  reference      String? // ex. ID de transaction Orange Money / Moov Money
+  periodStart    DateTime
+  periodEnd      DateTime
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
+
+  @@map("invoices")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String // ex. "sale.create", "product.update", "employee.deactivate"
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@map("audit_logs")
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  name       String
+  keyHash    String    @unique
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@map("api_keys")
+}
+
+model Webhook {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  url       String
+  events    String[] // ex. ["sale.created", "stock.low"]
+  secret    String // pour signer les payloads
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("webhooks")
+}

@@ -1,0 +1,200 @@
+'use client';
+
+import { FormEvent, useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import { Loader2, Wallet } from 'lucide-react';
+import { AppShell } from '@/components/app-shell';
+import { api, ApiError } from '@/lib/api';
+import { CustomerDetail, PaymentMethod } from '@/lib/types';
+import { formatXOF, PAYMENT_METHOD_LABELS } from '@/lib/format';
+import { Button } from '@/components/ui/button';
+import { Input, Label } from '@/components/ui/input';
+import { Select, Card } from '@/components/ui/card';
+
+const SETTLEMENT_METHODS: PaymentMethod[] = ['CASH', 'ORANGE_MONEY', 'MOOV_MONEY', 'CARD'];
+
+export default function FicheClientPage() {
+  const params = useParams<{ id: string }>();
+  const [customer, setCustomer] = useState<CustomerDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const [showForm, setShowForm] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState<PaymentMethod>('CASH');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  function load() {
+    api
+      .get<CustomerDetail>(`/customers/${params.id}`)
+      .then(setCustomer)
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Client introuvable.'));
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.id]);
+
+  async function handlePayment(e: FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    if (!amount || Number(amount) <= 0) {
+      setFormError('Indiquez un montant valide.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.post(`/customers/${params.id}/payments`, { amount: Number(amount), method });
+      setAmount('');
+      setShowForm(false);
+      load();
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Règlement impossible.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <AppShell allowedRoles={['ADMIN', 'MANAGER', 'CAISSIER']}>
+      <div className="mx-auto max-w-3xl px-8 py-8">
+        <Link href="/clients" className="mb-4 inline-block text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300">
+          ← Retour aux clients
+        </Link>
+
+        {error && <p className="text-sm text-red-500">{error}</p>}
+        {!error && !customer && (
+          <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Chargement…
+          </div>
+        )}
+
+        {customer && (
+          <>
+            <div className="mb-6 flex items-start justify-between">
+              <div>
+                <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">{customer.name}</h1>
+                <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+                  {customer.phone ?? 'Aucun numéro renseigné'}
+                </p>
+              </div>
+              <Button onClick={() => setShowForm((v) => !v)}>
+                <Wallet className="h-4 w-4" />
+                Enregistrer un règlement
+              </Button>
+            </div>
+
+            <div className="mb-6 grid grid-cols-2 gap-4">
+              <Card className="p-4">
+                <p className="text-xs uppercase text-zinc-500 dark:text-zinc-500">Dette actuelle</p>
+                <p
+                  className={`mt-1 text-lg font-semibold ${
+                    customer.creditBalance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-800 dark:text-zinc-200'
+                  }`}
+                >
+                  {formatXOF(customer.creditBalance)}
+                </p>
+              </Card>
+              <Card className="p-4">
+                <p className="text-xs uppercase text-zinc-500 dark:text-zinc-500">Plafond autorisé</p>
+                <p className="mt-1 text-lg font-semibold text-zinc-800 dark:text-zinc-200">
+                  {customer.creditLimit !== null ? formatXOF(customer.creditLimit) : 'Aucun'}
+                </p>
+              </Card>
+            </div>
+
+            {showForm && (
+              <Card className="mb-6 p-5">
+                <form onSubmit={handlePayment} className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <Label htmlFor="amount">Montant réglé</Label>
+                    <Input
+                      id="amount"
+                      type="number"
+                      min={1}
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                    />
+                  </div>
+                  <div className="w-40">
+                    <Label htmlFor="method">Mode</Label>
+                    <Select
+                      id="method"
+                      value={method}
+                      onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+                    >
+                      {SETTLEMENT_METHODS.map((m) => (
+                        <option key={m} value={m}>
+                          {PAYMENT_METHOD_LABELS[m]}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <Button type="submit" loading={submitting}>
+                    Enregistrer
+                  </Button>
+                </form>
+                {formError && <p className="mt-2 text-sm text-red-500">{formError}</p>}
+              </Card>
+            )}
+
+            <h2 className="mb-2 text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+              Historique des règlements
+            </h2>
+            <Card className="mb-6 overflow-hidden">
+              {customer.payments.length === 0 ? (
+                <p className="p-4 text-sm text-zinc-500 dark:text-zinc-500">Aucun règlement enregistré.</p>
+              ) : (
+                <ul>
+                  {customer.payments.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex justify-between border-b border-border-light px-4 py-2.5 text-sm last:border-0 dark:border-border-dark"
+                    >
+                      <span className="text-zinc-600 dark:text-zinc-400">
+                        {new Date(p.createdAt).toLocaleString('fr-FR')} — {PAYMENT_METHOD_LABELS[p.method]}
+                      </span>
+                      <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                        {formatXOF(p.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+
+            <h2 className="mb-2 text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+              Historique des achats
+            </h2>
+            <Card className="overflow-hidden">
+              {customer.sales.length === 0 ? (
+                <p className="p-4 text-sm text-zinc-500 dark:text-zinc-500">Aucun achat enregistré.</p>
+              ) : (
+                <ul>
+                  {customer.sales.map((sale) => (
+                    <li key={sale.id}>
+                      <Link
+                        href={`/ventes/${sale.id}`}
+                        className="flex justify-between border-b border-border-light px-4 py-2.5 text-sm last:border-0 hover:bg-zinc-50 dark:border-border-dark dark:hover:bg-zinc-900"
+                      >
+                        <span className="text-zinc-600 dark:text-zinc-400">
+                          {new Date(sale.createdAt).toLocaleString('fr-FR')}
+                        </span>
+                        <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                          {formatXOF(sale.total)}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </>
+        )}
+      </div>
+    </AppShell>
+  );
+}

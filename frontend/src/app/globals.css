@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-canvas-light text-zinc-900 dark:bg-canvas-dark dark:text-zinc-100 antialiased;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0;
+    width: 80mm;
+    margin: 0 auto;
+    color: #000;
+    background: #fff;
+  }
+  body {
+    background: #fff;
+  }
+}

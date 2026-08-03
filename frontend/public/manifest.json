@@ -1,0 +1,14 @@
+{
+  "name": "Boutique SaaS",
+  "short_name": "Boutique",
+  "description": "Gestion de boutique — caisse, stock, ventes, multi-boutique.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#16a34a",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
