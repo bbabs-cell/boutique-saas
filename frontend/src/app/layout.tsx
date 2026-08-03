@@ -4,13 +4,13 @@ import { ServiceWorkerRegister } from '@/components/service-worker-register';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Boutique SaaS — Gestion de commerce',
+  title: 'BoutikPro — Gestion de commerce',
   description: 'Gérez votre boutique : produits, stock et équipe, sans cahier papier.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Boutique SaaS',
+    title: 'BoutikPro',
   },
 };
 

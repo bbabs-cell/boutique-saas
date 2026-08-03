@@ -87,9 +87,8 @@ export function Sidebar() {
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border-light bg-surface-light dark:border-border-dark dark:bg-surface-dark">
       <div className="flex items-center gap-2 border-b border-border-light px-5 py-4 dark:border-border-dark">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-600 text-sm font-semibold text-white">
-          {user?.tenantName?.[0]?.toUpperCase() ?? 'B'}
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-mark.png" alt="BoutikPro" className="h-7 w-7 shrink-0 rounded-md object-cover" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
             {user?.tenantName ?? 'Ma boutique'}

@@ -34,9 +34,12 @@ export default function SelectionBoutiquePage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-canvas-light px-4 dark:bg-canvas-dark">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white">
-            <StoreIcon className="h-5 w-5" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo-mark.png"
+            alt="BoutikPro"
+            className="mb-3 h-14 w-14 rounded-xl object-cover shadow-sm"
+          />
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Choisir une boutique</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
             {user.tenantName} — vous avez accès à plusieurs boutiques.

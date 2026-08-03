@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
-import { Store, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 import { ApiError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -38,11 +38,20 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-canvas-light px-4 dark:bg-canvas-dark">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white">
-            {needsCode ? <ShieldCheck className="h-5 w-5" /> : <Store className="h-5 w-5" />}
-          </div>
+          {needsCode ? (
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-brand-600 text-white">
+              <ShieldCheck className="h-6 w-6" />
+            </div>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src="/logo-mark.png"
+              alt="BoutikPro"
+              className="mb-3 h-14 w-14 rounded-xl object-cover shadow-sm"
+            />
+          )}
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-            {needsCode ? 'Vérification en deux étapes' : 'Connexion'}
+            {needsCode ? 'Vérification en deux étapes' : 'BoutikPro'}
           </h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
             {needsCode

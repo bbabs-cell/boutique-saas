@@ -1,6 +1,6 @@
 {
-  "name": "Boutique SaaS",
-  "short_name": "Boutique",
+  "name": "BoutikPro",
+  "short_name": "BoutikPro",
   "description": "Gestion de boutique — caisse, stock, ventes, multi-boutique.",
   "start_url": "/dashboard",
   "display": "standalone",
