@@ -13,7 +13,7 @@ async function bootstrap() {
   const publicApiDocument = SwaggerModule.createDocument(
     app,
     new DocumentBuilder()
-      .setTitle('Boutique SaaS — API publique v1')
+      .setTitle('BoutikPro — API publique v1')
       .setDescription(
         "API de lecture seule pour les intégrations tierces (comptabilité externe, e-commerce…). " +
           "Authentification par clé API via l'en-tête X-API-Key. Générez une clé depuis " +

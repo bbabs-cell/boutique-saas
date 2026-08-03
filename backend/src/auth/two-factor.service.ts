@@ -4,7 +4,7 @@ import * as QRCode from 'qrcode';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 
-const ISSUER = 'Boutique SaaS';
+const ISSUER = 'BoutikPro';
 
 @Injectable()
 export class TwoFactorService {

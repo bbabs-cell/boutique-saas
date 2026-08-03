@@ -1,4 +1,4 @@
-# Boutique SaaS — V1 (Sprints 1-4) + V2 (Sprints 5-7) + V3 (Sprints 8-11) + V4 complète (Sprints 12-13)
+# BoutikPro — V1 (Sprints 1-4) + V2 (Sprints 5-7) + V3 (Sprints 8-11) + V4 complète (Sprints 12-13)
 
 SaaS de gestion de boutique pour les commerces d'Afrique de l'Ouest (priorité Mali). **Projet complet — les 13 sprints du prompt initial sont livrés.**
 
