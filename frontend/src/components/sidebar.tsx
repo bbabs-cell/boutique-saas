@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -26,6 +26,7 @@ import {
   CreditCard,
   ShieldCheck,
   Code2,
+  X,
 } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/lib/use-theme';
@@ -74,28 +75,55 @@ const SETTINGS_ITEMS: NavItem[] = [
   { label: 'Développeurs', href: '/parametres/developpeurs', icon: Code2, roles: ['ADMIN'] },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout, stores, activeStoreId, activeStoreName, setActiveStore } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
+
+  // Referme automatiquement le tiroir après un changement de page (sans effet sur desktop,
+  // où le tiroir reste visible en permanence quel que soit cet état).
+  useEffect(() => {
+    onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   const role = user?.role as Role | undefined;
   const visibleNavItems = NAV_ITEMS.filter((item) => !role || item.roles.includes(role));
   const visibleSettingsItems = SETTINGS_ITEMS.filter((item) => role && item.roles.includes(role));
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border-light bg-surface-light dark:border-border-dark dark:bg-surface-dark">
-      <div className="flex items-center gap-2 border-b border-border-light px-5 py-4 dark:border-border-dark">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-mark.png" alt="BoutikPro" className="h-7 w-7 shrink-0 rounded-md object-cover" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            {user?.tenantName ?? 'Ma boutique'}
-          </p>
+    <>
+      {/* Fond semi-transparent, mobile uniquement : referme le tiroir au clic à côté. */}
+      {open && <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={onClose} />}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 shrink-0 flex-col border-r border-border-light bg-surface-light transition-transform duration-200 dark:border-border-dark dark:bg-surface-dark md:static md:translate-x-0 ${
+          open ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex items-center gap-2 border-b border-border-light px-5 py-4 dark:border-border-dark">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-mark.png" alt="BoutikPro" className="h-7 w-7 shrink-0 rounded-md object-cover" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              {user?.tenantName ?? 'Ma boutique'}
+            </p>
+          </div>
+          {(role === 'ADMIN' || role === 'MANAGER') && <NotificationBell />}
+          <button
+            onClick={onClose}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 md:hidden"
+            aria-label="Fermer le menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        {(role === 'ADMIN' || role === 'MANAGER') && <NotificationBell />}
-      </div>
 
       {stores.length > 1 && (
         <div className="relative border-b border-border-light px-3 py-2.5 dark:border-border-dark">
@@ -225,5 +253,6 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }
