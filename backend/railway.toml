@@ -6,10 +6,24 @@
 
 [build]
 builder = "NIXPACKS"
-# `npm ci` et non `npm install` : le lockfile fait foi, et un lockfile désynchronisé doit
-# faire échouer le build plutôt que produire silencieusement un autre arbre de dépendances.
-# `prisma generate` est indispensable — le client Prisma n'est pas versionné.
-buildCommand = "npm ci && npx prisma generate && npm run build"
+
+# Deux détails de cette commande sont contre-intuitifs et méritent d'être expliqués, parce que
+# les « corriger » casserait le build :
+#
+# `npm install` et non `npm ci` : Railway monte un cache à l'intérieur de node_modules
+# (/app/node_modules/.cache). Or `npm ci` commence par supprimer node_modules en entier, se
+# heurte à ce point de montage et échoue sur `EBUSY: resource busy or locked`. La garantie que
+# `npm ci` apportait — un lockfile désynchronisé fait échouer le build — n'est pas perdue pour
+# autant : la CI GitHub l'exécute sur chaque PR, donc le lockfile est déjà vérifié avant
+# d'arriver ici. Avec un lockfile à jour, `npm install` installe exactement les mêmes versions.
+#
+# `--include=dev` : Railway définit NODE_ENV=production, ce qui fait ignorer les
+# devDependencies à npm — donc ni `nest` ni `typescript`, et `npm run build` échouerait sur
+# « nest: not found ». Ce sont des dépendances de compilation : elles sont nécessaires ici,
+# et absentes de l'image finale de toute façon.
+#
+# `prisma generate` est indispensable : le client Prisma est généré, pas versionné.
+buildCommand = "npm install --include=dev --no-audit --no-fund && npx prisma generate && npm run build"
 
 [deploy]
 # Les migrations tournent avant que la nouvelle version ne reçoive du trafic, et un échec
