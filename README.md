@@ -162,6 +162,13 @@ Variables à renseigner dans *Variables* :
 | `TWO_FACTOR_ENCRYPTION_KEY` | `openssl rand -base64 48` | recommandé |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | projet Supabase | pour l'upload de logo |
 
+Le build est décrit dans `backend/railway.toml` et n'a pas besoin d'être touché. Deux détails y
+sont volontairement contre-intuitifs, et les « corriger » casserait le déploiement : `npm install`
+plutôt que `npm ci` (Railway monte un cache dans `node_modules`, que `npm ci` tente de supprimer —
+`EBUSY`), et `--include=dev` (Railway impose `NODE_ENV=production`, qui priverait le build de
+`nest` et `typescript`). La vérification du lockfile reste assurée par la CI GitHub, qui exécute
+`npm ci` sur chaque PR.
+
 Trois pièges qui coûtent du temps :
 
 - **Le serveur refuse de démarrer** si `JWT_SECRET` manque ou vaut encore la valeur d'exemple du
