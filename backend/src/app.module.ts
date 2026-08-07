@@ -28,6 +28,7 @@ import { PublicApiModule } from './public-api/public-api.module';
 import { SyncModule } from './sync/sync.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { PlatformModule } from './platform/platform.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { PlatformModule } from './platform/platform.module';
     SyncModule,
     GraphqlModule,
     PlatformModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

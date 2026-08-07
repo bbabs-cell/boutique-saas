@@ -134,6 +134,70 @@ npx prisma migrate deploy
 npm run test:integration
 ```
 
+## Déploiement
+
+Backend sur **Railway**, frontend sur **Vercel**, PostgreSQL managé par Railway.
+
+### 1. Base de données
+
+Dans le projet Railway : **New → Database → PostgreSQL**. Railway expose alors une variable
+`DATABASE_URL` que le service backend peut référencer directement.
+
+### 2. Service backend
+
+**New → GitHub Repo**, puis dans *Settings → Source* régler **Root Directory** sur `backend`.
+C'est indispensable : sans cela Railway lit la racine du dépôt, n'y trouve pas de `package.json`
+et le build échoue immédiatement. Le reste (build, migrations, healthcheck) est décrit dans
+`backend/railway.toml` et ne demande aucune configuration manuelle.
+
+Variables à renseigner dans *Variables* :
+
+| Variable | Valeur | Obligatoire |
+|---|---|---|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (référence Railway) | oui |
+| `JWT_SECRET` | `openssl rand -base64 48` | oui |
+| `CORS_ORIGINS` | l'URL Vercel du frontend, ex. `https://boutikpro.vercel.app` | oui en pratique |
+| `NODE_ENV` | `production` | oui |
+| `PLATFORM_ADMIN_SECRET` | `openssl rand -base64 48` | pour activer les plans payants |
+| `TWO_FACTOR_ENCRYPTION_KEY` | `openssl rand -base64 48` | recommandé |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | projet Supabase | pour l'upload de logo |
+
+Trois pièges qui coûtent du temps :
+
+- **Le serveur refuse de démarrer** si `JWT_SECRET` manque ou vaut encore la valeur d'exemple du
+  dépôt. C'est voulu — il vaut mieux un déploiement qui échoue bruyamment qu'un service qui
+  signe ses jetons avec un secret public. Le message de démarrage dit quelle variable corriger.
+- **`CORS_ORIGINS` non renseignée** fait retomber l'API sur `http://localhost:3000` : le frontend
+  déployé sera bloqué par le navigateur, avec une erreur CORS et aucune trace côté serveur.
+- **`NODE_ENV=production`** désactive l'introspection GraphQL. Sans elle, le schéma complet de
+  l'API reste exposé publiquement.
+
+Les migrations tournent automatiquement avant chaque bascule (`preDeployCommand`) : un échec
+annule le déploiement et laisse la version précédente en ligne.
+
+Le seed n'est pas joué en production. Pour amorcer une vraie boutique, créer le premier compte
+via `POST /api/auth/register`, qui crée l'organisation, sa boutique et son administrateur.
+
+### 3. Frontend sur Vercel
+
+Root Directory : `frontend`. Une seule variable :
+
+| Variable | Valeur |
+|---|---|
+| `NEXT_PUBLIC_API_URL` | l'URL Railway du backend suivie de `/api`, ex. `https://boutikpro-api.up.railway.app/api` |
+
+Cette variable est lue au **build**, pas à l'exécution : la modifier impose de relancer un
+déploiement pour qu'elle prenne effet.
+
+### 4. Vérifier
+
+```bash
+curl https://<backend>/api/health      # {"status":"ok","database":"ok"}
+```
+
+Cette route est aussi celle qu'interroge Railway : elle renvoie `503` si la base est injoignable,
+ce qui empêche une version cassée de remplacer une version saine.
+
 ## Démarrage — Frontend
 
 ```bash
