@@ -154,7 +154,8 @@ Variables à renseigner dans *Variables* :
 
 | Variable | Valeur | Obligatoire |
 |---|---|---|
-| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (référence Railway) | oui |
+| `DATABASE_URL` | connexion de l'application (voir ci-dessous) | oui |
+| `DIRECT_URL` | connexion directe, pour les migrations | oui |
 | `JWT_SECRET` | `openssl rand -base64 48` | oui |
 | `CORS_ORIGINS` | l'URL Vercel du frontend, ex. `https://boutikpro.vercel.app` | oui en pratique |
 | `NODE_ENV` | `production` | oui |
@@ -168,6 +169,25 @@ plutôt que `npm ci` (Railway monte un cache dans `node_modules`, que `npm ci` t
 `EBUSY`), et `--include=dev` (Railway impose `NODE_ENV=production`, qui priverait le build de
 `nest` et `typescript`). La vérification du lockfile reste assurée par la CI GitHub, qui exécute
 `npm ci` sur chaque PR.
+
+#### Si ta base est derrière un pooler (Supabase, PgBouncer…)
+
+C'est le cas le plus fréquent, et il demande **deux** connexions distinctes — sans quoi les
+migrations échouent sur `FATAL: (EMAXCONNSESSION) max clients reached in session mode`, et
+l'application renvoie des 500 dès qu'un peu de trafic arrive.
+
+| Variable | Port Supabase | Rôle |
+|---|---|---|
+| `DATABASE_URL` | **6543** (mode transaction) + `?pgbouncer=true&connection_limit=1` | trafic applicatif |
+| `DIRECT_URL` | **5432** (mode session) | migrations uniquement |
+
+La raison : le moteur de schéma de Prisma a besoin d'une vraie session PostgreSQL (verrous
+consultatifs, transactions longues) que le mode transaction ne sait pas fournir. À l'inverse, le
+mode transaction est le seul qui permette de servir beaucoup de requêtes simultanées avec peu de
+connexions réelles. Pointer les deux sur le port 5432 fait se disputer les migrations et le
+trafic pour les mêmes quelques places.
+
+Sans pooler (PostgreSQL local, base managée classique), les deux variables prennent la même valeur.
 
 Trois pièges qui coûtent du temps :
 
