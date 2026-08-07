@@ -29,7 +29,17 @@ buildCommand = "npm install --include=dev --no-audit --no-fund && npx prisma gen
 # Les migrations tournent avant que la nouvelle version ne reçoive du trafic, et un échec
 # annule le déploiement : la version précédente reste en ligne plutôt que d'être remplacée
 # par une version dont le schéma ne correspond pas à la base.
-preDeployCommand = "npx prisma migrate deploy"
+#
+# `DATABASE_URL=${DIRECT_URL:-$DATABASE_URL}` : le temps de cette commande seulement, Prisma
+# est pointé vers la connexion directe. Le moteur de schéma a besoin d'une vraie session
+# PostgreSQL (verrous consultatifs, transactions longues) qu'un pooler en mode transaction ne
+# fournit pas — et derrière un pooler en mode session, migrations et trafic applicatif se
+# disputent le même petit nombre de places, ce qui fait échouer les migrations.
+#
+# La substitution retombe sur DATABASE_URL quand DIRECT_URL n'est pas définie. C'est
+# volontaire : sans pooler (PostgreSQL local ou managé classique), une seule connexion suffit,
+# et il ne faut pas qu'une variable oubliée empêche tout déploiement.
+preDeployCommand = "DATABASE_URL=${DIRECT_URL:-$DATABASE_URL} npx prisma migrate deploy"
 
 startCommand = "node dist/main"
 

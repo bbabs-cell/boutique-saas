@@ -155,7 +155,7 @@ Variables à renseigner dans *Variables* :
 | Variable | Valeur | Obligatoire |
 |---|---|---|
 | `DATABASE_URL` | connexion de l'application (voir ci-dessous) | oui |
-| `DIRECT_URL` | connexion directe, pour les migrations | oui |
+| `DIRECT_URL` | connexion directe, pour les migrations | seulement derrière un pooler |
 | `JWT_SECRET` | `openssl rand -base64 48` | oui |
 | `CORS_ORIGINS` | l'URL Vercel du frontend, ex. `https://boutikpro.vercel.app` | oui en pratique |
 | `NODE_ENV` | `production` | oui |
@@ -187,7 +187,13 @@ mode transaction est le seul qui permette de servir beaucoup de requêtes simult
 connexions réelles. Pointer les deux sur le port 5432 fait se disputer les migrations et le
 trafic pour les mêmes quelques places.
 
-Sans pooler (PostgreSQL local, base managée classique), les deux variables prennent la même valeur.
+`DIRECT_URL` est **optionnelle** : non définie, les migrations empruntent simplement `DATABASE_URL`,
+ce qui convient à toute base sans pooler. Une variable oubliée ne peut donc pas bloquer un déploiement.
+
+Si les migrations échouent sur `Could not parse schema engine response` ou sur un plantage du moteur
+de schéma, la cause est presque toujours une chaîne `DIRECT_URL` invalide — un `[YOUR-PASSWORD]`
+laissé tel quel, ou un caractère spécial non encodé (`@` → `%40`, `#` → `%23`). Vérifie-la avec
+`psql "<ta-chaine>" -c "select 1"` avant de la coller dans l'hébergeur.
 
 Trois pièges qui coûtent du temps :
 

@@ -4,21 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-
-  // Connexion utilisée par l'application en fonctionnement. Derrière un pooler (Supabase,
-  // PgBouncer…), c'est le mode « transaction » qu'il faut viser : chaque requête emprunte une
-  // connexion et la rend aussitôt, ce qui permet de servir beaucoup de requêtes simultanées
-  // avec peu de connexions réelles.
-  url = env("DATABASE_URL")
-
-  // Connexion directe, utilisée uniquement par les migrations. Le moteur de schéma de Prisma
-  // a besoin d'une vraie session PostgreSQL (verrous consultatifs, transactions longues) que
-  // le mode transaction ne peut pas fournir. Sans cette séparation, les migrations entrent en
-  // concurrence avec le trafic applicatif pour les mêmes places : c'est ce qui a fait échouer
-  // un déploiement avec « max clients reached in session mode ».
-  //
-  // Sans pooler (PostgreSQL local, base managée classique), les deux valeurs sont identiques.
-  directUrl = env("DIRECT_URL")
+  url      = env("DATABASE_URL")
 }
 
 enum Role {
