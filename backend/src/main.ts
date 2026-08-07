@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -19,7 +20,22 @@ function corsOrigins(): string[] {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Typée en application Express : `set('trust proxy')` ci-dessous est une option d'Express,
+  // absente de l'interface générique de Nest.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // En production, l'application tourne derrière le répartiteur de l'hébergeur (Railway, et la
+  // plupart des plateformes). Sans cette ligne, Express considère que le client est ce
+  // répartiteur : `req.ip` désigne alors une adresse de l'infrastructure, pas celle de
+  // l'appelant. Conséquence mesurée sur le déploiement réel : la limite de tentatives sur
+  // /auth/login ne se déclenchait pratiquement jamais (1 fois sur 40 requêtes en salve), parce
+  // que les compteurs se dispersaient sur des adresses internes changeantes au lieu de
+  // s'accumuler sur celle de l'attaquant.
+  //
+  // `1` et non `true` : on ne fait confiance qu'au premier intermédiaire, celui de l'hébergeur.
+  // Faire confiance à toute la chaîne laisserait n'importe qui usurper son adresse via un
+  // en-tête X-Forwarded-For fabriqué, et contourner la limite qu'on cherche justement à poser.
+  app.set('trust proxy', 1);
 
   // En-têtes de sécurité par défaut (HSTS, nosniff, anti-framing…).
   // La CSP est désactivée volontairement : ce serveur ne renvoie que du JSON, sauf la page
