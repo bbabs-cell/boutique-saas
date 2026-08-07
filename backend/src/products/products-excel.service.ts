@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import * as XLSX from 'xlsx';
+import { buildWorkbookBuffer, readFirstSheetRows } from '../common/excel';
 import { PrismaService } from '../prisma/prisma.service';
 import { getTenantPlanLimits } from '../common/plan-limits';
 import { resolveActiveStoreId } from '../common/stores-helper';
@@ -49,11 +49,7 @@ export class ProductsExcelService {
       };
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(rows, { header: [...COLUMNS] });
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Produits');
-
-    return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    return buildWorkbookBuffer([{ name: 'Produits', columns: [...COLUMNS], rows }]);
   }
 
   async importCatalog(
@@ -71,9 +67,7 @@ export class ProductsExcelService {
 
     let rows: Record<string, unknown>[];
     try {
-      const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      rows = await readFirstSheetRows(file.buffer);
     } catch {
       throw new BadRequestException('Fichier Excel illisible. Vérifiez le format (.xlsx).');
     }

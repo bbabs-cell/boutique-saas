@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as XLSX from 'xlsx';
+import { buildWorkbookBuffer, readFirstSheetRows } from '../common/excel';
 import { BadRequestException } from '@nestjs/common';
 import { ProductsExcelService } from './products-excel.service';
 
@@ -22,11 +22,11 @@ function buildPrismaMock() {
   };
 }
 
-function buildXlsxFile(rows: Record<string, unknown>[]): Express.Multer.File {
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Produits');
-  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+const COLONNES = ['Nom', 'Code-barres', 'Prix', 'Coût', 'Stock', 'Seuil alerte', 'Catégorie'];
+
+/** Construit un vrai fichier .xlsx en mémoire : le test traverse donc l'écriture ET la lecture. */
+async function buildXlsxFile(rows: Record<string, unknown>[]): Promise<Express.Multer.File> {
+  const buffer = await buildWorkbookBuffer([{ name: 'Produits', columns: COLONNES, rows }]);
   return { buffer, originalname: 'catalogue.xlsx', mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } as any;
 }
 
@@ -55,9 +55,7 @@ describe('ProductsExcelService', () => {
       ]);
 
       const buffer = await service.exportCatalog('tenant-1', 'admin-1', 'ADMIN', 's1');
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+      const rows = await readFirstSheetRows(buffer);
 
       expect(rows).toHaveLength(1);
       expect(rows[0]['Nom']).toBe('Riz 5kg');
@@ -81,7 +79,7 @@ describe('ProductsExcelService', () => {
       prisma.product.findFirst.mockResolvedValue(null);
       prisma.product.create.mockResolvedValue({ id: 'p1', name: 'Sucre 1kg' });
 
-      const file = buildXlsxFile([
+      const file = await buildXlsxFile([
         {
           Nom: 'Sucre 1kg',
           'Code-barres': '999999',
@@ -115,7 +113,7 @@ describe('ProductsExcelService', () => {
       prisma.product.findFirst.mockResolvedValue({ id: 'existing-1', barcode: '999999' });
       prisma.product.update.mockResolvedValue({ id: 'existing-1' });
 
-      const file = buildXlsxFile([
+      const file = await buildXlsxFile([
         { Nom: 'Sucre 1kg', 'Code-barres': '999999', Prix: 1300, Coût: 900, Stock: 15, 'Seuil alerte': '', Catégorie: '' },
       ]);
 
@@ -140,7 +138,7 @@ describe('ProductsExcelService', () => {
       prisma.product.findFirst.mockResolvedValue(null);
       prisma.product.create.mockResolvedValue({ id: 'p2', name: 'Produit valide' });
 
-      const file = buildXlsxFile([
+      const file = await buildXlsxFile([
         { Nom: '', Prix: 1000, Coût: 800, Stock: 1 }, // nom manquant → erreur
         { Nom: 'Produit valide', Prix: 1000, Coût: 800, Stock: 1 },
       ]);
@@ -159,7 +157,7 @@ describe('ProductsExcelService', () => {
       prisma.subscription.findUnique.mockResolvedValue({ plan: 'FREE' });
       prisma.product.count.mockResolvedValue(49);
 
-      const file = buildXlsxFile([
+      const file = await buildXlsxFile([
         { Nom: 'Produit A', Prix: 1000, Coût: 800, Stock: 1 },
         { Nom: 'Produit B', Prix: 1000, Coût: 800, Stock: 1 },
         { Nom: 'Produit C', Prix: 1000, Coût: 800, Stock: 1 },
@@ -180,7 +178,7 @@ describe('ProductsExcelService', () => {
       prisma.subscription.findUnique.mockResolvedValue({ plan: 'FREE' });
       prisma.product.count.mockResolvedValue(50); // quota déjà plein
 
-      const file = buildXlsxFile([{ Nom: 'Produit A', Prix: 1000, Coût: 800, Stock: 1 }]);
+      const file = await buildXlsxFile([{ Nom: 'Produit A', Prix: 1000, Coût: 800, Stock: 1 }]);
 
       const result = await service.importCatalog('tenant-1', 'admin-1', 'ADMIN', file, 's1');
 
@@ -195,7 +193,7 @@ describe('ProductsExcelService', () => {
       prisma.subscription.findUnique.mockResolvedValue({ plan: 'BUSINESS' });
       prisma.product.count.mockResolvedValue(10_000);
 
-      const file = buildXlsxFile([
+      const file = await buildXlsxFile([
         { Nom: 'Produit A', Prix: 1000, Coût: 800, Stock: 1 },
         { Nom: 'Produit B', Prix: 1000, Coût: 800, Stock: 1 },
       ]);

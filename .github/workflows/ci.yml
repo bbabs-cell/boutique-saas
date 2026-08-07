@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Une seule exécution par branche : un push qui en suit un autre annule le précédent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — types, tests unitaires et d'intégration
+    runs-on: ubuntu-latest
+
+    # Base réelle pour les tests d'intégration : l'isolation multi-tenant et le verrouillage
+    # du stock ne peuvent pas être validés contre un Prisma simulé.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: boutique_saas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/boutique_saas_test?schema=public
+      JWT_SECRET: secret-de-ci-uniquement-suffisamment-long-pour-passer-la-validation
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # `npm ci` et non `npm install` : c'est ce qui échoue si package.json et le lockfile
+      # divergent, exactement le cas qui a bloqué un déploiement par le passé.
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - name: Vérification des types
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Tests unitaires
+        run: npm test
+
+      - name: Migrations
+        run: npx prisma migrate deploy
+
+      - name: Tests d'intégration
+        run: npm run test:integration
+
+  frontend:
+    name: Frontend — types et build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Vérification des types
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npm test
+
+      - name: Build de production
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3001/api

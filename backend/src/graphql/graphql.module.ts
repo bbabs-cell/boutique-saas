@@ -18,9 +18,11 @@ import { PublicApiResolver } from './public-api.resolver';
       // on expose simplement la requête HTTP dans le contexte pour que le guard puisse la lire.
       context: ({ req }: { req: unknown }) => ({ req }),
       playground: false,
-      // Apollo Sandbox reste accessible pour explorer le schéma, mais toute exécution de requête
-      // passe par le même ApiKeyGuard que l'API REST — la clé API reste requise pour les données.
-      introspection: true,
+      // Introspection réservée au développement : elle sert à explorer le schéma depuis Apollo
+      // Sandbox. En production, elle ne fait qu'exposer la cartographie complète de l'API à des
+      // appelants non authentifiés — les données, elles, restent protégées par ApiKeyGuard.
+      // Les intégrateurs disposent de la documentation Swagger et du schéma généré (schema.gql).
+      introspection: process.env.NODE_ENV !== 'production',
     }),
   ],
   providers: [PublicApiResolver],

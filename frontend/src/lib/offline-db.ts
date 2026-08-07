@@ -182,54 +182,77 @@ interface SyncSaleResult {
   reason?: string;
 }
 
-/** Envoie toutes les ventes en attente au serveur. Les ventes acceptées ou déjà connues sont
- *  retirées de la file locale ; celles en conflit y restent, marquées, pour résolution manuelle. */
+/**
+ * Nombre maximum de ventes envoyées en une requête. Doit rester aligné sur la limite du
+ * serveur (MAX_SALES_PER_SYNC_BATCH, backend/src/sync/dto/sync.dto.ts) : chaque vente y est
+ * rejouée dans sa propre transaction, un lot trop gros dépasserait le délai d'attente du
+ * réseau avant d'avoir fini. La déduplication serveur par `clientSaleId` rend chaque lot sûr
+ * à renvoyer, donc découper n'expose à aucun doublon.
+ */
+const MAX_SALES_PER_SYNC_BATCH = 50;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/** Envoie toutes les ventes en attente au serveur, par lots. Les ventes acceptées ou déjà
+ *  connues sont retirées de la file locale ; celles en conflit y restent, marquées, pour
+ *  résolution manuelle. Une journée entière hors-ligne part donc en plusieurs requêtes, et
+ *  un lot déjà traité n'est pas rejoué si la connexion tombe au milieu. */
 export async function syncPendingSales(): Promise<{ synced: number; conflicts: number }> {
   const pending = await offlineDb.pendingSales.where('status').equals('pending').sortBy('createdOfflineAt');
   if (pending.length === 0) {
     return { synced: 0, conflicts: 0 };
   }
 
-  await offlineDb.pendingSales.where('status').equals('pending').modify({ status: 'syncing' });
-
-  let results: SyncSaleResult[];
-  try {
-    const res = await api.post<{ results: SyncSaleResult[] }>('/sync/sales', {
-      sales: pending.map((sale) => ({
-        clientSaleId: sale.clientSaleId,
-        items: sale.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-        discount: sale.discount,
-        payments: sale.payments,
-        customerId: sale.customerId,
-        storeId: sale.storeId,
-        createdOfflineAt: sale.createdOfflineAt,
-      })),
-    });
-    results = res.results;
-  } catch (err) {
-    // Le lot entier n'a pas pu être envoyé (ex. connexion perdue en cours de route) : les
-    // ventes repassent en attente pour la prochaine tentative, rien n'est perdu.
-    await offlineDb.pendingSales.where('status').equals('syncing').modify({ status: 'pending' });
-    throw err instanceof ApiError ? err : new Error('La synchronisation a échoué.');
-  }
-
   let synced = 0;
   let conflicts = 0;
 
-  await offlineDb.transaction('rw', offlineDb.pendingSales, async () => {
-    for (const result of results) {
-      if (result.status === 'accepted' || result.status === 'already_synced') {
-        await offlineDb.pendingSales.delete(result.clientSaleId);
-        synced++;
-      } else {
-        await offlineDb.pendingSales.update(result.clientSaleId, {
-          status: 'conflict',
-          conflictReason: result.reason ?? 'Conflit non précisé.',
-        });
-        conflicts++;
-      }
+  for (const batch of chunk(pending, MAX_SALES_PER_SYNC_BATCH)) {
+    const batchIds = batch.map((sale) => sale.clientSaleId);
+    await offlineDb.pendingSales.where('clientSaleId').anyOf(batchIds).modify({ status: 'syncing' });
+
+    let results: SyncSaleResult[];
+    try {
+      const res = await api.post<{ results: SyncSaleResult[] }>('/sync/sales', {
+        sales: batch.map((sale) => ({
+          clientSaleId: sale.clientSaleId,
+          items: sale.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+          discount: sale.discount,
+          payments: sale.payments,
+          customerId: sale.customerId,
+          storeId: sale.storeId,
+          createdOfflineAt: sale.createdOfflineAt,
+        })),
+      });
+      results = res.results;
+    } catch (err) {
+      // Ce lot n'a pas pu être envoyé (ex. connexion perdue en cours de route) : ses ventes
+      // repassent en attente pour la prochaine tentative, rien n'est perdu. Les lots déjà
+      // traités avant celui-ci restent acquis — c'est tout l'intérêt du découpage.
+      await offlineDb.pendingSales.where('clientSaleId').anyOf(batchIds).modify({ status: 'pending' });
+      throw err instanceof ApiError ? err : new Error('La synchronisation a échoué.');
     }
-  });
+
+    await offlineDb.transaction('rw', offlineDb.pendingSales, async () => {
+      for (const result of results) {
+        if (result.status === 'accepted' || result.status === 'already_synced') {
+          await offlineDb.pendingSales.delete(result.clientSaleId);
+          synced++;
+        } else {
+          await offlineDb.pendingSales.update(result.clientSaleId, {
+            status: 'conflict',
+            conflictReason: result.reason ?? 'Conflit non précisé.',
+          });
+          conflicts++;
+        }
+      }
+    });
+  }
 
   return { synced, conflicts };
 }

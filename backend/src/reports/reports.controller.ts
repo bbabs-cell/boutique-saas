@@ -48,7 +48,7 @@ export class ReportsController {
     @Res() res: Response,
   ) {
     const report = await this.reportsService.getSalesReport(user.tenantId, user.userId, user.role, query);
-    const excel = this.reportsExcelService.generateSalesReportExcel(report);
+    const excel = await this.reportsExcelService.generateSalesReportExcel(report);
     res.setHeader(
       'Content-Type',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

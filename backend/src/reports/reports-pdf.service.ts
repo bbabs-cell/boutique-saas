@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-// pdfkit n'a pas de types officiels à jour pour cette version ; import require classique.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// pdfkit n'a pas de types officiels à jour pour cette version : l'import est fait sans types
+// plutôt qu'en `require()`, pour rester un vrai module ES et non une échappatoire au typage.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const PDFDocument = require('pdfkit');
 
 interface ReportSaleLine {

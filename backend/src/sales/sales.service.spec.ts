@@ -16,7 +16,7 @@ function buildTxMock() {
     },
     customer: { findFirst: vi.fn(), update: vi.fn() },
     stockMovement: { create: vi.fn() },
-    notification: { create: vi.fn() },
+    notification: { create: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
     sale: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   };
 }

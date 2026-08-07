@@ -16,7 +16,7 @@ SaaS de gestion de boutique pour les commerces d'Afrique de l'Ouest (priorité M
 - **Sprint 12 (V4 — le plus délicat techniquement)** : PWA installable, caisse fonctionnelle hors-ligne (catalogue en cache IndexedDB, ventes mises en file locale), synchronisation automatique au retour du réseau avec détection de conflits (ex. stock insuffisant redécouvert à la synchro)
 - **Sprint 13 (fin de la V4, optionnel)** : API GraphQL en lecture seule (`/graphql`), mêmes ressources et même authentification par clé API que l'API REST publique — alternative pour les intégrations qui le demandent explicitement, sans dupliquer la logique de requête
 
-Hors périmètre (sprints suivants) : mode hors-ligne, GraphQL. L'intégration réelle du paiement des abonnements (encaissement mobile money) reste à brancher — le Sprint 9 pose la structure (facture créée non payée) sans l'encaisser. L'API publique est en lecture seule pour l'instant (pas d'écriture).
+Hors périmètre : l'intégration réelle du paiement des abonnements (encaissement mobile money) reste à brancher — le Sprint 9 pose la structure (facture créée non payée) sans l'encaisser, l'activation se fait par confirmation manuelle de l'opérateur. L'API publique est en lecture seule pour l'instant (pas d'écriture).
 
 ## Structure
 
@@ -119,7 +119,19 @@ Autres données de démo :
 
 Lancer les tests :
 ```bash
-npm test
+npm test                 # tests unitaires — aucune dépendance externe
+npm run lint             # ESLint
+npm run test:integration # tests d'intégration — nécessitent une base PostgreSQL migrée
+```
+
+Les tests d'intégration parlent à une vraie base : ils valident ce qu'un Prisma simulé ne peut pas
+prouver — l'isolation entre organisations, le comportement réel des transactions et des verrous
+(notamment la protection contre la survente en caisse), et les contraintes posées en base.
+
+```bash
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/boutique_saas_test?schema=public"
+npx prisma migrate deploy
+npm run test:integration
 ```
 
 ## Démarrage — Frontend
