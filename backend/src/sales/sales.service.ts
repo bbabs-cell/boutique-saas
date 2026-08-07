@@ -38,16 +38,37 @@ export class SalesService {
 
     const pendingWebhookEvents: WebhookEvent[] = [];
 
+    const productIds = [...quantityByProduct.keys()];
+
     const sale = await this.prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
 
       const products = await tx.product.findMany({
-        where: { tenantId, id: { in: [...quantityByProduct.keys()] }, active: true },
+        where: { tenantId, id: { in: productIds }, active: true },
       });
       const productsById = new Map(products.map((p) => [p.id, p]));
 
+      // Verrouille les lignes d'inventaire concernées jusqu'à la fin de la transaction.
+      // Sans cela, deux caisses vendant le même dernier article lisent toutes les deux un
+      // stock de 1, passent toutes les deux la vérification ci-dessous, puis décrémentent :
+      // la vente est acceptée deux fois et le stock tombe à -1. PostgreSQL est en Read
+      // Committed par défaut, la transaction seule ne suffit donc pas à l'empêcher.
+      //
+      // `ORDER BY "productId"` : deux ventes portant sur les mêmes produits prennent leurs
+      // verrous dans le même ordre, ce qui évite qu'elles se bloquent mutuellement.
+      // Les produits sans ligne d'inventaire ne verrouillent rien — ils sont de toute façon
+      // rejetés plus bas pour stock insuffisant.
+      await tx.$queryRaw`
+        SELECT "productId"
+        FROM "inventory"
+        WHERE "storeId" = ${storeId!}
+          AND "productId" IN (${Prisma.join(productIds)})
+        ORDER BY "productId"
+        FOR UPDATE
+      `;
+
       const inventoryRows = await tx.inventory.findMany({
-        where: { storeId: storeId!, productId: { in: [...quantityByProduct.keys()] } },
+        where: { storeId: storeId!, productId: { in: productIds } },
       });
       const stockByProduct = new Map(inventoryRows.map((i) => [i.productId, i.stock]));
 

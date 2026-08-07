@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { MAX_LOGO_SIZE_BYTES } from '../common/upload-limits';
 import { SupabaseStorageService } from './supabase-storage.service';
 import { UpdateSettingsDto } from './dto/settings.dto';
 
 const ALLOWED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
-const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024; // 2 Mo
 
 @Injectable()
 export class SettingsService {

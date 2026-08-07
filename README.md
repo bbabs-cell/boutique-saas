@@ -92,6 +92,16 @@ npx prisma migrate dev --name add_offline_sync
 
 Ce sprint ne touche pas au schéma Prisma : il expose en lecture seule les mêmes données que l'API REST publique, via `/graphql`. Un fichier `schema.gql` est généré automatiquement à la racine du dossier `backend` au premier démarrage (code-first) — c'est normal, il n'a pas besoin d'être commité (déjà ajouté au `.gitignore`).
 
+### Migration « stock jamais négatif » — normale, mais écrite à la main
+
+Cette migration pose une contrainte `CHECK ("stock" >= 0)` sur la table `inventory`, en filet de sécurité contre la survente (la course elle-même est empêchée par un verrou de ligne dans `SalesService.create`). Prisma ne sait pas exprimer les contraintes `CHECK` dans `schema.prisma` : le fichier SQL est donc écrit directement, et `schema.prisma` reste inchangé.
+
+```bash
+npx prisma migrate deploy    # applique la migration telle quelle
+```
+
+Si ta base contient déjà des stocks négatifs (séquelle d'une survente passée), la migration les ramène à 0 avant de poser la contrainte — le stock physique ne peut pas être inférieur à zéro, et les mouvements de stock gardent la trace de ce qui s'est produit.
+
 
 L'upload de logo (`POST /settings/logo`) nécessite un projet Supabase avec un bucket de stockage nommé `logos` (public en lecture) et une clé de service (`SUPABASE_SERVICE_ROLE_KEY`) — sans ces variables, l'upload échoue proprement avec un message d'erreur explicite, le reste de l'application fonctionne normalement.
 
@@ -179,12 +189,12 @@ npm run dev                        # http://localhost:3000
 47. Se connecter avec `caissier@boutique-demo.ml` (accès à Bamako uniquement) → vérifier qu'il n'y a **pas** de sélecteur de boutique (connexion directe)
 48. Se connecter en ADMIN, ouvrir le sélecteur de boutique → choisir « Toutes les boutiques » → vérifier que `/dashboard` agrège les deux boutiques
 49. Toujours en ADMIN, aller sur `/parametres/boutiques` → créer une troisième boutique, y assigner un employé, puis retirer l'assignation
-50. Aller sur `/parametres/abonnement` → le plan actuel doit être « Starter » (cohérent avec les 2 boutiques du seed)
+50. Aller sur `/parametres/abonnement` → le plan actuel doit être « Premium » (seul palier incluant toutes les fonctionnalités livrées, dont l'API publique)
 51. Rétrograder vers le plan « Gratuit »
 52. Tenter de créer une nouvelle boutique (`/parametres/boutiques`) → doit être refusé (limite de 1 boutique sur le plan Gratuit, déjà dépassée avec Bamako + Sikasso)
 53. Tenter de créer un employé MANAGER ou MAGASINIER (`/parametres/employes`) → doit être refusé (rôles fins non inclus dans le plan Gratuit)
 54. Aller sur `/depenses` ou `/comptabilite` → doit être refusé (fonctionnalité non incluse dans le plan Gratuit)
-55. Repasser au plan « Starter » ou « Business » → vérifier que les actions précédentes redeviennent possibles
+55. Repasser au plan « Premium » → vérifier que les actions précédentes redeviennent possibles
 56. Vérifier qu'une facture non payée est apparue dans l'historique de facturation à chaque changement vers un plan payant
 57. (Optionnel, sans attendre un vrai cron) Pour tester la notification d'expiration sans attendre : modifie manuellement `expiresAt` d'une ligne dans la table `subscriptions` pour qu'elle soit dans 3 jours, puis appelle `notifyExpiringSoon()` — par exemple en ajoutant temporairement un endpoint de debug, ou attends l'exécution quotidienne réelle du cron
 58. Aller sur `/parametres/securite`, cliquer « Activer le 2FA », scanner le QR code avec Google Authenticator ou Authy, saisir le code affiché
@@ -347,7 +357,7 @@ Le code a été écrit dans un environnement **sans accès réseau** : je n'ai p
 - Module Subscription : `GET /subscription`, `POST /subscription/upgrade` (crée une facture non payée pour un plan payant — l'encaissement mobile money réel reste à intégrer), `GET /subscription/invoices`, ADMIN uniquement
 - `SubscriptionExpiryService` : tâche planifiée quotidienne (`@nestjs/schedule`) qui notifie les abonnements expirant sous 7 jours (sans doublon sur 24h) et passe au statut `EXPIRED` ceux dont la date est dépassée
 - Tests Vitest sur les helpers de limites, le service Subscription et la tâche planifiée
-- Seed : abonnement Starter pour la boutique de démo (cohérent avec ses 2 boutiques existantes)
+- Seed : abonnement Premium pour la boutique de démo, afin que toutes les fonctionnalités livrées soient explorables (l'API publique des sprints 11 et 13 est réservée à ce palier)
 
 **Sprint 9 — Frontend**
 - `/parametres/abonnement` : plan actuel avec statut et date d'expiration, comparatif des 4 plans, changement de plan, historique de facturation (statut payée/en attente)

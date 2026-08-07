@@ -1,11 +1,37 @@
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { PublicApiModule } from './public-api/public-api.module';
 
+const DEFAULT_DEV_ORIGIN = 'http://localhost:3000';
+
+/**
+ * Origines autorisées à appeler l'API, lues dans CORS_ORIGINS (séparées par des virgules).
+ * Sans configuration, on retombe sur le frontend local : c'est ce dont on a besoin en
+ * développement, et cela reste fermé en production tant que la variable n'est pas renseignée.
+ */
+function corsOrigins(): string[] {
+  return (process.env.CORS_ORIGINS ?? DEFAULT_DEV_ORIGIN)
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.enableCors({ origin: true, credentials: true });
+
+  // En-têtes de sécurité par défaut (HSTS, nosniff, anti-framing…).
+  // La CSP est désactivée volontairement : ce serveur ne renvoie que du JSON, sauf la page
+  // Swagger de /api/docs, qui a besoin de scripts en ligne. Une CSP stricte y casserait la
+  // documentation sans rien protéger de plus — la défense utile pour une API est côté frontend.
+  app.use(helmet({ contentSecurityPolicy: false }));
+
+  // Le navigateur n'accepte de partager les requêtes authentifiées qu'avec les origines
+  // listées ici. `origin: true` renvoyait l'origine de l'appelant quelle qu'elle soit, ce qui
+  // revenait à n'avoir aucune restriction.
+  app.enableCors({ origin: corsOrigins(), credentials: true });
+
   app.setGlobalPrefix('api');
 
   // Documentation séparée de l'API publique v1 (authentifiée par clé API), distincte de

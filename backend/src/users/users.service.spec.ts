@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 
 vi.mock('bcrypt', () => ({
@@ -16,6 +21,8 @@ function buildPrismaMock() {
       update: vi.fn(),
     },
     subscription: { findUnique: vi.fn(), create: vi.fn() },
+    // Boutique unique du tenant par défaut : le nouvel employé y est affecté automatiquement.
+    store: { findMany: vi.fn().mockResolvedValue([{ id: 's1' }]) },
   };
 }
 
@@ -141,5 +148,90 @@ describe('UsersService', () => {
     await expect(service.setActive('tenant-1', 'unknown', { active: false })).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  describe("affectation aux boutiques à la création", () => {
+    beforeEach(() => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({ id: 'u2', role: 'CAISSIER' });
+    });
+
+    const caissier = {
+      name: 'Caissier 1',
+      email: 'caissier@x.ml',
+      password: 'password123',
+      role: 'CAISSIER',
+    };
+
+    it("affecte l'employé à la boutique transmise — sans quoi son compte ne peut rien faire", async () => {
+      prisma.store.findMany.mockResolvedValue([{ id: 's2' }]);
+
+      await service.create('tenant-1', 'ADMIN', { ...caissier, storeId: 's2' } as any);
+
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userStores: { create: [{ storeId: 's2' }] },
+          }),
+        }),
+      );
+    });
+
+    it('accepte plusieurs boutiques', async () => {
+      prisma.store.findMany.mockResolvedValue([{ id: 's1' }, { id: 's2' }]);
+
+      await service.create('tenant-1', 'ADMIN', { ...caissier, storeIds: ['s1', 's2'] } as any);
+
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userStores: { create: [{ storeId: 's1' }, { storeId: 's2' }] },
+          }),
+        }),
+      );
+    });
+
+    it("retombe sur l'unique boutique du tenant quand aucune n'est précisée", async () => {
+      prisma.store.findMany.mockResolvedValue([{ id: 's1' }]);
+
+      await service.create('tenant-1', 'ADMIN', caissier as any);
+
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ userStores: { create: [{ storeId: 's1' }] } }),
+        }),
+      );
+    });
+
+    it("refuse de créer un compte inutilisable quand le tenant a plusieurs boutiques et qu'aucune n'est précisée", async () => {
+      prisma.store.findMany.mockResolvedValue([{ id: 's1' }, { id: 's2' }]);
+
+      await expect(service.create('tenant-1', 'ADMIN', caissier as any)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it("refuse une boutique d'une autre organisation", async () => {
+      prisma.store.findMany.mockResolvedValue([]); // la boutique demandée n'est pas dans ce tenant
+
+      await expect(
+        service.create('tenant-1', 'ADMIN', { ...caissier, storeId: 's-autre-tenant' } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it("n'exige aucune affectation pour un ADMIN, qui voit déjà toutes les boutiques", async () => {
+      prisma.store.findMany.mockResolvedValue([{ id: 's1' }, { id: 's2' }]);
+      prisma.user.create.mockResolvedValue({ id: 'u3', role: 'ADMIN' });
+
+      await service.create('tenant-1', 'ADMIN', { ...caissier, role: 'ADMIN' } as any);
+
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ userStores: { create: [] } }),
+        }),
+      );
+    });
   });
 });

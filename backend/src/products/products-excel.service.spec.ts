@@ -5,11 +5,20 @@ import { ProductsExcelService } from './products-excel.service';
 
 function buildPrismaMock() {
   return {
-    product: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    product: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      // Nombre de produits déjà présents, pour le quota du plan appliqué à l'import.
+      count: vi.fn().mockResolvedValue(0),
+    },
     category: { upsert: vi.fn() },
     inventory: { upsert: vi.fn() },
     store: { findFirst: vi.fn(), findMany: vi.fn() },
     userStore: { findUnique: vi.fn(), findMany: vi.fn() },
+    // Plan sans limite de produits par défaut : les tests qui vérifient le quota le redéfinissent.
+    subscription: { findUnique: vi.fn().mockResolvedValue({ plan: 'BUSINESS' }), create: vi.fn() },
   };
 }
 
@@ -140,6 +149,61 @@ describe('ProductsExcelService', () => {
 
       expect(result.errorCount).toBe(1);
       expect(result.createdCount).toBe(1);
+    });
+
+    it("respecte la limite de produits du plan — l'import ne doit pas être une porte dérobée", async () => {
+      prisma.store.findFirst.mockResolvedValue({ id: 's1', tenantId: 'tenant-1' });
+      prisma.product.findFirst.mockResolvedValue(null);
+      prisma.product.create.mockResolvedValue({ id: 'p1', name: 'Produit' });
+      // Plan Gratuit : 50 produits, dont 49 déjà créés → une seule création possible.
+      prisma.subscription.findUnique.mockResolvedValue({ plan: 'FREE' });
+      prisma.product.count.mockResolvedValue(49);
+
+      const file = buildXlsxFile([
+        { Nom: 'Produit A', Prix: 1000, Coût: 800, Stock: 1 },
+        { Nom: 'Produit B', Prix: 1000, Coût: 800, Stock: 1 },
+        { Nom: 'Produit C', Prix: 1000, Coût: 800, Stock: 1 },
+      ]);
+
+      const result = await service.importCatalog('tenant-1', 'admin-1', 'ADMIN', file, 's1');
+
+      expect(result.createdCount).toBe(1);
+      expect(result.errorCount).toBe(2);
+      expect(result.errors[0].message).toMatch(/Limite de 50 produits/);
+      expect(prisma.product.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('ne consomme pas de quota quand les lignes mettent à jour des produits existants', async () => {
+      prisma.store.findFirst.mockResolvedValue({ id: 's1', tenantId: 'tenant-1' });
+      prisma.product.findFirst.mockResolvedValue({ id: 'p-existant', tenantId: 'tenant-1' });
+      prisma.product.update.mockResolvedValue({ id: 'p-existant', name: 'Produit A' });
+      prisma.subscription.findUnique.mockResolvedValue({ plan: 'FREE' });
+      prisma.product.count.mockResolvedValue(50); // quota déjà plein
+
+      const file = buildXlsxFile([{ Nom: 'Produit A', Prix: 1000, Coût: 800, Stock: 1 }]);
+
+      const result = await service.importCatalog('tenant-1', 'admin-1', 'ADMIN', file, 's1');
+
+      expect(result.updatedCount).toBe(1);
+      expect(result.errorCount).toBe(0);
+    });
+
+    it('laisse passer un import volumineux sur un plan sans limite de produits', async () => {
+      prisma.store.findFirst.mockResolvedValue({ id: 's1', tenantId: 'tenant-1' });
+      prisma.product.findFirst.mockResolvedValue(null);
+      prisma.product.create.mockResolvedValue({ id: 'p1', name: 'Produit' });
+      prisma.subscription.findUnique.mockResolvedValue({ plan: 'BUSINESS' });
+      prisma.product.count.mockResolvedValue(10_000);
+
+      const file = buildXlsxFile([
+        { Nom: 'Produit A', Prix: 1000, Coût: 800, Stock: 1 },
+        { Nom: 'Produit B', Prix: 1000, Coût: 800, Stock: 1 },
+      ]);
+
+      const result = await service.importCatalog('tenant-1', 'admin-1', 'ADMIN', file, 's1');
+
+      expect(result.createdCount).toBe(2);
+      expect(result.errorCount).toBe(0);
     });
   });
 });

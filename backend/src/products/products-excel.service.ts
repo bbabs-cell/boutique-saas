@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../prisma/prisma.service';
+import { getTenantPlanLimits } from '../common/plan-limits';
 import { resolveActiveStoreId } from '../common/stores-helper';
 
 const COLUMNS = ['Nom', 'Code-barres', 'Prix', 'Coût', 'Stock', 'Seuil alerte', 'Catégorie'] as const;
@@ -81,6 +82,15 @@ export class ProductsExcelService {
     const updated: ImportRowResult[] = [];
     const errors: ImportRowError[] = [];
 
+    // La limite de produits du plan s'applique ici comme sur la création à l'unité : sans ce
+    // contrôle, l'import était le chemin le plus simple pour la contourner entièrement.
+    // Seules les créations comptent — mettre à jour un produit existant ne consomme pas de quota.
+    const { maxProducts } = await getTenantPlanLimits(this.prisma, tenantId);
+    let remainingQuota =
+      maxProducts === null
+        ? Number.POSITIVE_INFINITY
+        : Math.max(0, maxProducts - (await this.prisma.product.count({ where: { tenantId, active: true } })));
+
     // Séquentiel (pas dans une seule transaction) : un import volumineux ne doit pas
     // échouer entièrement à cause d'une seule ligne invalide.
     for (let i = 0; i < rows.length; i++) {
@@ -135,6 +145,12 @@ export class ProductsExcelService {
           });
           updated.push({ row: rowNumber, name, action: 'updated' });
         } else {
+          if (remainingQuota <= 0) {
+            throw new Error(
+              `Limite de ${maxProducts} produits atteinte pour votre plan. ` +
+                'Passez à un plan supérieur pour importer davantage de produits.',
+            );
+          }
           const product = await this.prisma.product.create({
             data: {
               tenantId,
@@ -147,6 +163,7 @@ export class ProductsExcelService {
               inventory: { create: { storeId: storeId!, stock } },
             },
           });
+          remainingQuota -= 1;
           created.push({ row: rowNumber, name: product.name, action: 'created' });
         }
       } catch (err) {

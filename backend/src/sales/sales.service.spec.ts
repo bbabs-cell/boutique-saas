@@ -4,6 +4,9 @@ import { SalesService } from './sales.service';
 
 function buildTxMock() {
   return {
+    // Verrou de ligne posé avant la lecture du stock (SELECT ... FOR UPDATE) : sans valeur de
+    // retour utile, mais il doit exister pour que la transaction se déroule.
+    $queryRaw: vi.fn().mockResolvedValue([]),
     tenant: { findUniqueOrThrow: vi.fn() },
     product: { findMany: vi.fn() },
     inventory: {
@@ -103,6 +106,33 @@ describe('SalesService', () => {
       expect(tx.inventory.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { productId_storeId: { productId: 'p1', storeId: 'store-B' } } }),
       );
+    });
+
+    it('verrouille les lignes d’inventaire AVANT de lire le stock (protection contre la survente)', async () => {
+      prisma.store.findFirst.mockResolvedValue({ id: 's1', tenantId: 'tenant-1' });
+      tx.tenant.findUniqueOrThrow.mockResolvedValue({ id: 'tenant-1', tvaEnabled: false, tvaRate: 0 });
+      tx.product.findMany.mockResolvedValue([baseProduct]);
+      tx.inventory.findMany.mockResolvedValue([{ productId: 'p1', storeId: 's1', stock: 10 }]);
+      tx.sale.create.mockResolvedValue({ id: 'sale-1', total: 5000, storeId: 's1', items: [{}], createdAt: new Date() });
+
+      await service.create('tenant-1', 'user-1', 'ADMIN', {
+        items: [{ productId: 'p1', quantity: 1 }],
+        discount: 0,
+        payments: [{ method: 'CASH', amount: 5000 }],
+        storeId: 's1',
+      } as any);
+
+      expect(tx.$queryRaw).toHaveBeenCalled();
+
+      // L'ordre est ce qui compte : lire le stock avant de l'avoir verrouillé laisserait
+      // deux caisses concurrentes lire la même valeur et vendre deux fois le dernier article.
+      const lockOrder = tx.$queryRaw.mock.invocationCallOrder[0];
+      const readOrder = tx.inventory.findMany.mock.invocationCallOrder[0];
+      expect(lockOrder).toBeLessThan(readOrder);
+
+      // Le verrou porte bien sur la boutique concernée.
+      const [fragment] = tx.$queryRaw.mock.calls[0];
+      expect(fragment.join('?')).toMatch(/FOR UPDATE/);
     });
 
     it('refuse si le stock de la boutique active est insuffisant, même si une autre boutique en a assez', async () => {

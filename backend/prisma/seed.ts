@@ -181,13 +181,15 @@ async function main() {
     },
   });
 
-  // Abonnement Starter (cohérent avec les 2 boutiques déjà créées ci-dessus — le plan Gratuit
-  // est limité à 1 seule boutique). Rétrograder vers Gratuit depuis /parametres/abonnement
-  // permet de tester le blocage par limite de plan.
+  // Abonnement Premium : c'est le seul plan qui inclut toutes les fonctionnalités livrées, donc
+  // le seul qui permette d'explorer la démo en entier — notamment l'API publique et l'API
+  // GraphQL (sprints 11 et 13), réservées à ce palier. Rétrograder depuis /parametres/abonnement
+  // (Gratuit : 1 boutique, pas de rôles fins ; Starter/Business : pas d'API publique) reste le
+  // moyen de tester les blocages par limite de plan.
   await prisma.subscription.upsert({
     where: { tenantId: tenant.id },
     update: {},
-    create: { tenantId: tenant.id, plan: 'STARTER', status: 'ACTIVE' },
+    create: { tenantId: tenant.id, plan: 'PREMIUM', status: 'ACTIVE' },
   });
 
   console.log('Seed terminé.');
