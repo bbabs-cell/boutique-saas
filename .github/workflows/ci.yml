@@ -34,6 +34,8 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/boutique_saas_test?schema=public
+      # Pas de pooler en CI : la connexion directe est la même que celle de l'application.
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/boutique_saas_test?schema=public
       JWT_SECRET: secret-de-ci-uniquement-suffisamment-long-pour-passer-la-validation
 
     defaults:
