@@ -7,7 +7,7 @@ function buildTxMock() {
     product: { findFirst: vi.fn() },
     inventory: { findUnique: vi.fn(), upsert: vi.fn() },
     stockMovement: { create: vi.fn() },
-    notification: { create: vi.fn() },
+    notification: { create: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
   };
 }
 

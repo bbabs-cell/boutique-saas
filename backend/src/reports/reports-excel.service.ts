@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import * as XLSX from 'xlsx';
+import { buildWorkbookBuffer } from '../common/excel';
 
 interface ReportSaleRow {
   createdAt: Date;
@@ -18,7 +18,7 @@ interface ReportForExcel {
 
 @Injectable()
 export class ReportsExcelService {
-  generateSalesReportExcel(report: ReportForExcel): Buffer {
+  async generateSalesReportExcel(report: ReportForExcel): Promise<Buffer> {
     const salesRows = report.sales.map((sale) => ({
       Date: sale.createdAt.toLocaleString('fr-FR'),
       Vendeur: sale.user.name,
@@ -35,10 +35,13 @@ export class ReportsExcelService {
       { Indicateur: 'Bénéfice estimé', Valeur: report.summary.profit },
     ];
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Résumé');
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(salesRows), 'Ventes');
-
-    return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    return buildWorkbookBuffer([
+      { name: 'Résumé', columns: ['Indicateur', 'Valeur'], rows: summaryRows },
+      {
+        name: 'Ventes',
+        columns: ['Date', 'Vendeur', 'Client', 'Sous-total', 'Remise', 'TVA', 'Total'],
+        rows: salesRows,
+      },
+    ]);
   }
 }

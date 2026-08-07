@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { validateEnv } from './common/env.validation';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -26,11 +28,17 @@ import { PublicApiModule } from './public-api/public-api.module';
 import { SyncModule } from './sync/sync.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { PlatformModule } from './platform/platform.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     ScheduleModule.forRoot(),
+    // Limite de débit par défaut, déclarée ici plutôt que dans un module métier : `forRoot()`
+    // produit un module global, il ne peut donc y en avoir qu'une seule déclaration dans
+    // l'application. Chaque contrôleur qui veut une limite l'active avec ThrottlerGuard et
+    // peut resserrer la sienne avec @Throttle (voir AuthController).
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 60 }]),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -56,6 +64,7 @@ import { PlatformModule } from './platform/platform.module';
     SyncModule,
     GraphqlModule,
     PlatformModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

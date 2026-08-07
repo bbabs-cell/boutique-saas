@@ -16,7 +16,7 @@ SaaS de gestion de boutique pour les commerces d'Afrique de l'Ouest (priorité M
 - **Sprint 12 (V4 — le plus délicat techniquement)** : PWA installable, caisse fonctionnelle hors-ligne (catalogue en cache IndexedDB, ventes mises en file locale), synchronisation automatique au retour du réseau avec détection de conflits (ex. stock insuffisant redécouvert à la synchro)
 - **Sprint 13 (fin de la V4, optionnel)** : API GraphQL en lecture seule (`/graphql`), mêmes ressources et même authentification par clé API que l'API REST publique — alternative pour les intégrations qui le demandent explicitement, sans dupliquer la logique de requête
 
-Hors périmètre (sprints suivants) : mode hors-ligne, GraphQL. L'intégration réelle du paiement des abonnements (encaissement mobile money) reste à brancher — le Sprint 9 pose la structure (facture créée non payée) sans l'encaisser. L'API publique est en lecture seule pour l'instant (pas d'écriture).
+Hors périmètre : l'intégration réelle du paiement des abonnements (encaissement mobile money) reste à brancher — le Sprint 9 pose la structure (facture créée non payée) sans l'encaisser, l'activation se fait par confirmation manuelle de l'opérateur. L'API publique est en lecture seule pour l'instant (pas d'écriture).
 
 ## Structure
 
@@ -92,6 +92,16 @@ npx prisma migrate dev --name add_offline_sync
 
 Ce sprint ne touche pas au schéma Prisma : il expose en lecture seule les mêmes données que l'API REST publique, via `/graphql`. Un fichier `schema.gql` est généré automatiquement à la racine du dossier `backend` au premier démarrage (code-first) — c'est normal, il n'a pas besoin d'être commité (déjà ajouté au `.gitignore`).
 
+### Migration « stock jamais négatif » — normale, mais écrite à la main
+
+Cette migration pose une contrainte `CHECK ("stock" >= 0)` sur la table `inventory`, en filet de sécurité contre la survente (la course elle-même est empêchée par un verrou de ligne dans `SalesService.create`). Prisma ne sait pas exprimer les contraintes `CHECK` dans `schema.prisma` : le fichier SQL est donc écrit directement, et `schema.prisma` reste inchangé.
+
+```bash
+npx prisma migrate deploy    # applique la migration telle quelle
+```
+
+Si ta base contient déjà des stocks négatifs (séquelle d'une survente passée), la migration les ramène à 0 avant de poser la contrainte — le stock physique ne peut pas être inférieur à zéro, et les mouvements de stock gardent la trace de ce qui s'est produit.
+
 
 L'upload de logo (`POST /settings/logo`) nécessite un projet Supabase avec un bucket de stockage nommé `logos` (public en lecture) et une clé de service (`SUPABASE_SERVICE_ROLE_KEY`) — sans ces variables, l'upload échoue proprement avec un message d'erreur explicite, le reste de l'application fonctionne normalement.
 
@@ -109,8 +119,84 @@ Autres données de démo :
 
 Lancer les tests :
 ```bash
-npm test
+npm test                 # tests unitaires — aucune dépendance externe
+npm run lint             # ESLint
+npm run test:integration # tests d'intégration — nécessitent une base PostgreSQL migrée
 ```
+
+Les tests d'intégration parlent à une vraie base : ils valident ce qu'un Prisma simulé ne peut pas
+prouver — l'isolation entre organisations, le comportement réel des transactions et des verrous
+(notamment la protection contre la survente en caisse), et les contraintes posées en base.
+
+```bash
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/boutique_saas_test?schema=public"
+npx prisma migrate deploy
+npm run test:integration
+```
+
+## Déploiement
+
+Backend sur **Railway**, frontend sur **Vercel**, PostgreSQL managé par Railway.
+
+### 1. Base de données
+
+Dans le projet Railway : **New → Database → PostgreSQL**. Railway expose alors une variable
+`DATABASE_URL` que le service backend peut référencer directement.
+
+### 2. Service backend
+
+**New → GitHub Repo**, puis dans *Settings → Source* régler **Root Directory** sur `backend`.
+C'est indispensable : sans cela Railway lit la racine du dépôt, n'y trouve pas de `package.json`
+et le build échoue immédiatement. Le reste (build, migrations, healthcheck) est décrit dans
+`backend/railway.toml` et ne demande aucune configuration manuelle.
+
+Variables à renseigner dans *Variables* :
+
+| Variable | Valeur | Obligatoire |
+|---|---|---|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (référence Railway) | oui |
+| `JWT_SECRET` | `openssl rand -base64 48` | oui |
+| `CORS_ORIGINS` | l'URL Vercel du frontend, ex. `https://boutikpro.vercel.app` | oui en pratique |
+| `NODE_ENV` | `production` | oui |
+| `PLATFORM_ADMIN_SECRET` | `openssl rand -base64 48` | pour activer les plans payants |
+| `TWO_FACTOR_ENCRYPTION_KEY` | `openssl rand -base64 48` | recommandé |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | projet Supabase | pour l'upload de logo |
+
+Trois pièges qui coûtent du temps :
+
+- **Le serveur refuse de démarrer** si `JWT_SECRET` manque ou vaut encore la valeur d'exemple du
+  dépôt. C'est voulu — il vaut mieux un déploiement qui échoue bruyamment qu'un service qui
+  signe ses jetons avec un secret public. Le message de démarrage dit quelle variable corriger.
+- **`CORS_ORIGINS` non renseignée** fait retomber l'API sur `http://localhost:3000` : le frontend
+  déployé sera bloqué par le navigateur, avec une erreur CORS et aucune trace côté serveur.
+- **`NODE_ENV=production`** désactive l'introspection GraphQL. Sans elle, le schéma complet de
+  l'API reste exposé publiquement.
+
+Les migrations tournent automatiquement avant chaque bascule (`preDeployCommand`) : un échec
+annule le déploiement et laisse la version précédente en ligne.
+
+Le seed n'est pas joué en production. Pour amorcer une vraie boutique, créer le premier compte
+via `POST /api/auth/register`, qui crée l'organisation, sa boutique et son administrateur.
+
+### 3. Frontend sur Vercel
+
+Root Directory : `frontend`. Une seule variable :
+
+| Variable | Valeur |
+|---|---|
+| `NEXT_PUBLIC_API_URL` | l'URL Railway du backend suivie de `/api`, ex. `https://boutikpro-api.up.railway.app/api` |
+
+Cette variable est lue au **build**, pas à l'exécution : la modifier impose de relancer un
+déploiement pour qu'elle prenne effet.
+
+### 4. Vérifier
+
+```bash
+curl https://<backend>/api/health      # {"status":"ok","database":"ok"}
+```
+
+Cette route est aussi celle qu'interroge Railway : elle renvoie `503` si la base est injoignable,
+ce qui empêche une version cassée de remplacer une version saine.
 
 ## Démarrage — Frontend
 
@@ -179,12 +265,12 @@ npm run dev                        # http://localhost:3000
 47. Se connecter avec `caissier@boutique-demo.ml` (accès à Bamako uniquement) → vérifier qu'il n'y a **pas** de sélecteur de boutique (connexion directe)
 48. Se connecter en ADMIN, ouvrir le sélecteur de boutique → choisir « Toutes les boutiques » → vérifier que `/dashboard` agrège les deux boutiques
 49. Toujours en ADMIN, aller sur `/parametres/boutiques` → créer une troisième boutique, y assigner un employé, puis retirer l'assignation
-50. Aller sur `/parametres/abonnement` → le plan actuel doit être « Starter » (cohérent avec les 2 boutiques du seed)
+50. Aller sur `/parametres/abonnement` → le plan actuel doit être « Premium » (seul palier incluant toutes les fonctionnalités livrées, dont l'API publique)
 51. Rétrograder vers le plan « Gratuit »
 52. Tenter de créer une nouvelle boutique (`/parametres/boutiques`) → doit être refusé (limite de 1 boutique sur le plan Gratuit, déjà dépassée avec Bamako + Sikasso)
 53. Tenter de créer un employé MANAGER ou MAGASINIER (`/parametres/employes`) → doit être refusé (rôles fins non inclus dans le plan Gratuit)
 54. Aller sur `/depenses` ou `/comptabilite` → doit être refusé (fonctionnalité non incluse dans le plan Gratuit)
-55. Repasser au plan « Starter » ou « Business » → vérifier que les actions précédentes redeviennent possibles
+55. Repasser au plan « Premium » → vérifier que les actions précédentes redeviennent possibles
 56. Vérifier qu'une facture non payée est apparue dans l'historique de facturation à chaque changement vers un plan payant
 57. (Optionnel, sans attendre un vrai cron) Pour tester la notification d'expiration sans attendre : modifie manuellement `expiresAt` d'une ligne dans la table `subscriptions` pour qu'elle soit dans 3 jours, puis appelle `notifyExpiringSoon()` — par exemple en ajoutant temporairement un endpoint de debug, ou attends l'exécution quotidienne réelle du cron
 58. Aller sur `/parametres/securite`, cliquer « Activer le 2FA », scanner le QR code avec Google Authenticator ou Authy, saisir le code affiché
@@ -347,7 +433,7 @@ Le code a été écrit dans un environnement **sans accès réseau** : je n'ai p
 - Module Subscription : `GET /subscription`, `POST /subscription/upgrade` (crée une facture non payée pour un plan payant — l'encaissement mobile money réel reste à intégrer), `GET /subscription/invoices`, ADMIN uniquement
 - `SubscriptionExpiryService` : tâche planifiée quotidienne (`@nestjs/schedule`) qui notifie les abonnements expirant sous 7 jours (sans doublon sur 24h) et passe au statut `EXPIRED` ceux dont la date est dépassée
 - Tests Vitest sur les helpers de limites, le service Subscription et la tâche planifiée
-- Seed : abonnement Starter pour la boutique de démo (cohérent avec ses 2 boutiques existantes)
+- Seed : abonnement Premium pour la boutique de démo, afin que toutes les fonctionnalités livrées soient explorables (l'API publique des sprints 11 et 13 est réservée à ce palier)
 
 **Sprint 9 — Frontend**
 - `/parametres/abonnement` : plan actuel avec statut et date d'expiration, comparatif des 4 plans, changement de plan, historique de facturation (statut payée/en attente)

@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ApiKeyGuard } from './api-key.guard';
 import { hashApiKey } from '../api-key.util';
 
 function buildPrismaMock() {
   return {
     apiKey: { findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}) },
+    // L'API publique est réservée aux plans qui l'incluent : par défaut, un plan qui y donne
+    // droit. Les tests du contrôle de plan redéfinissent cette valeur.
+    subscription: { findUnique: vi.fn().mockResolvedValue({ plan: 'PREMIUM' }), create: vi.fn() },
   };
 }
 
@@ -102,5 +105,43 @@ describe('ApiKeyGuard', () => {
 
     expect(result).toBe(true);
     expect(context._req.tenantId).toBe('tenant-1');
+  });
+
+  describe("contrôle du plan (l'API publique est une fonctionnalité facturée)", () => {
+    const plainKey = 'bsk_plan123';
+
+    function mockValidKey() {
+      prisma.apiKey.findUnique.mockResolvedValue({
+        id: 'key-1',
+        tenantId: 'tenant-1',
+        keyHash: hashApiKey(plainKey),
+        revokedAt: null,
+      });
+    }
+
+    it("refuse une clé valide dont le plan n'inclut pas l'API publique", async () => {
+      mockValidKey();
+      prisma.subscription.findUnique.mockResolvedValue({ plan: 'FREE' });
+
+      await expect(guard.canActivate(buildContext({ 'x-api-key': plainKey }))).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('refuse aussi côté GraphQL, qui passe par le même guard', async () => {
+      mockValidKey();
+      prisma.subscription.findUnique.mockResolvedValue({ plan: 'BUSINESS' });
+
+      await expect(
+        guard.canActivate(buildGraphqlContext({ 'x-api-key': plainKey })),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('autorise sur un plan qui inclut la fonctionnalité', async () => {
+      mockValidKey();
+      prisma.subscription.findUnique.mockResolvedValue({ plan: 'PREMIUM' });
+
+      await expect(guard.canActivate(buildContext({ 'x-api-key': plainKey }))).resolves.toBe(true);
+    });
   });
 });

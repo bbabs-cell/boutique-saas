@@ -1,4 +1,5 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { TwoFactorService } from './two-factor.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
@@ -10,8 +11,11 @@ import {
   verifyTwoFactorSchema,
 } from './dto/two-factor.dto';
 
+// Ces routes exigent déjà un token valide, mais elles vérifient un code TOTP et un mot de
+// passe : une session compromise ne doit pas pouvoir les deviner par répétition.
 @Controller('auth/2fa')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ThrottlerGuard)
+@Throttle({ default: { limit: 10, ttl: 60_000 } })
 export class TwoFactorController {
   constructor(private twoFactorService: TwoFactorService) {}
 

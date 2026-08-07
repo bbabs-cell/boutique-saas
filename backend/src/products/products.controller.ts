@@ -16,6 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { ProductsService } from './products.service';
 import { ProductsExcelService } from './products-excel.service';
+import { MAX_CATALOG_IMPORT_SIZE_BYTES, SINGLE_FILE_UPLOAD } from '../common/upload-limits';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { PlanLimitGuard } from '../common/guards/plan-limit.guard';
@@ -73,9 +74,15 @@ export class ProductsController {
     res.send(buffer);
   }
 
+  // Comme pour le logo : la limite doit être posée sur l'interceptor, sinon multer bufferise
+  // tout le fichier en mémoire avant qu'on puisse le refuser.
   @Post('import')
   @Roles('ADMIN', 'MANAGER', 'MAGASINIER')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_CATALOG_IMPORT_SIZE_BYTES, files: SINGLE_FILE_UPLOAD },
+    }),
+  )
   importCatalog(
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file?: Express.Multer.File,

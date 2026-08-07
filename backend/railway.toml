@@ -1,0 +1,28 @@
+# Déploiement du backend sur Railway.
+#
+# Ce fichier vit dans backend/ : dans le service Railway, il faut donc régler
+# « Root Directory » sur `backend` (Settings → Source). Sans cela Railway lit la racine du
+# dépôt, n'y trouve pas de package.json, et le build échoue avant même de commencer.
+
+[build]
+builder = "NIXPACKS"
+# `npm ci` et non `npm install` : le lockfile fait foi, et un lockfile désynchronisé doit
+# faire échouer le build plutôt que produire silencieusement un autre arbre de dépendances.
+# `prisma generate` est indispensable — le client Prisma n'est pas versionné.
+buildCommand = "npm ci && npx prisma generate && npm run build"
+
+[deploy]
+# Les migrations tournent avant que la nouvelle version ne reçoive du trafic, et un échec
+# annule le déploiement : la version précédente reste en ligne plutôt que d'être remplacée
+# par une version dont le schéma ne correspond pas à la base.
+preDeployCommand = "npx prisma migrate deploy"
+
+startCommand = "node dist/main"
+
+# Railway ne bascule le trafic que si cette route répond. Elle interroge réellement la base :
+# un conteneur qui démarre sans joindre PostgreSQL ne doit pas remplacer une version saine.
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

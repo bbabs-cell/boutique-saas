@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertPlanFeature } from '../plan-limits';
 import { hashApiKey } from '../api-key.util';
 
 @Injectable()
@@ -26,6 +27,13 @@ export class ApiKeyGuard implements CanActivate {
     if (!apiKey || apiKey.revokedAt) {
       throw new UnauthorizedException('Clé API invalide ou révoquée.');
     }
+
+    // L'API publique est une fonctionnalité vendue avec le plan. Le contrôle est fait ici, et
+    // pas sur chaque contrôleur : ce guard est le point de passage unique de l'API REST v1 et
+    // de l'API GraphQL, donc le seul endroit où la règle ne peut pas être oubliée en ajoutant
+    // une route. Une clé émise sous un plan supérieur cesse de fonctionner si le plan retombe,
+    // ce qui est le comportement attendu d'une fonctionnalité facturée.
+    await assertPlanFeature(this.prisma, apiKey.tenantId, 'publicApi');
 
     req.tenantId = apiKey.tenantId;
 

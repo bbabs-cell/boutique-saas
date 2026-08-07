@@ -1,14 +1,11 @@
 import { Module } from '@nestjs/common';
-import { ThrottlerModule } from '@nestjs/throttler';
 import { PublicApiService } from './public-api.service';
 import { PublicApiController } from './public-api.controller';
 
 @Module({
-  imports: [
-    // Rate limiting dédié à l'API publique : 60 requêtes/minute par défaut, indépendant de
-    // l'API interne (qui n'a pas de limite de débit à ce jour).
-    ThrottlerModule.forRoot([{ name: 'default', ttl: 60000, limit: 60 }]),
-  ],
+  // La configuration du rate limiting vit dans AppModule : `ThrottlerModule.forRoot()` crée un
+  // module global, en déclarer un second ici entrerait en conflit avec celui de l'application.
+  // La limite propre à l'API publique reste exprimée sur le contrôleur, via @Throttle.
   controllers: [PublicApiController],
   providers: [PublicApiService],
   exports: [PublicApiService],
